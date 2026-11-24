@@ -1,0 +1,22 @@
+name: choice-input-control
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Controlled environment name
+        required: true
+        type: choice
+        options:
+          - prod
+          - dev
+permissions:
+  contents: read
+jobs:
+  observe:
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record selected value
+        env:
+          SELECTED_ENVIRONMENT: ${{ inputs.environment }}
+        run: printf 'VRP_SELECTED_ENVIRONMENT=%s\n' "$SELECTED_ENVIRONMENT"

@@ -1,0 +1,93 @@
+name: exact-create-pull-request-control
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Control or attack arm
+        required: true
+        type: choice
+        options:
+          - control
+          - attack
+      version:
+        description: Trusted release tag stand-in
+        required: true
+        type: string
+      body:
+        description: Release body stand-in
+        required: true
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  reproduce:
+    if: github.repository == 'arnodorian1337/pwnreq-choice-input-control-20261125'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: main
+
+      - name: Get release information
+        id: release_info
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          TIME="2026-11-25T00:00:00Z"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "TIME=${TIME}" >> "$GITHUB_OUTPUT"
+          echo 'RAW_CHANGELOG<<EOF' >> "$GITHUB_OUTPUT"
+          printf "%s\n" "$BODY" >> "$GITHUB_OUTPUT"
+          echo 'EOF' >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ github.event.inputs.body }}
+
+      - name: Validate version
+        id: validate_version
+        run: |
+          if echo "${{ steps.release_info.outputs.VERSION }}" | grep -q "nightly"; then
+            echo "Nightly release detected. Stopping workflow."
+            echo "CONTINUE=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "CONTINUE=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate harmless controlled change
+        if: steps.validate_version.outputs.CONTINUE == 'true'
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+        run: printf 'generated %s\n' "$MODE" > "generated-${MODE}.txt"
+
+      - name: Create Pull Request
+        if: steps.validate_version.outputs.CONTINUE == 'true'
+        id: create_pr
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c
+        with:
+          token: '${{ secrets.GITHUB_TOKEN }}'
+          commit-message: 'docs(changelog): update for ${{ steps.release_info.outputs.VERSION }}'
+          title: 'Changelog for ${{ steps.release_info.outputs.VERSION }}'
+          body: 'Controlled exact-action test.'
+          branch: 'changelog-${{ steps.release_info.outputs.VERSION }}'
+          base: 'main'
+          delete-branch: true
+
+      - name: Verify controlled marker boundary
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+          MARKER_URL: https://raw.githubusercontent.com/arnodorian1337/pwnreq-choice-input-control-20261125/main/exact-action-main-marker.txt
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o marker.txt -w '%{http_code}' "$MARKER_URL")
+          if [[ "$MODE" == control ]]; then
+            test "$status" = 404
+            echo 'VRP_CONTROL_MARKER_ABSENT=true'
+          else
+            test "$status" = 200
+            test "$(cat marker.txt)" = P
+            echo 'VRP_ATTACK_MARKER_READBACK=P'
+          fi
